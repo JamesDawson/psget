@@ -11,7 +11,10 @@ $PSGET_ZIP = "ZIP"
 $PSGET_PSM1 = "PSM1"
 $PSGET_PSD1 = "PSD1"
 
-$global:UserModuleBasePath = Join-Path -Path ([Environment]::GetFolderPath('MyDocuments')) -ChildPath "WindowsPowerShell\Modules"
+if ([Environment]::GetFolderPath('MyDocuments'))
+{
+    $global:UserModuleBasePath = Join-Path -Path ([Environment]::GetFolderPath('MyDocuments')) -ChildPath "WindowsPowerShell\Modules"    
+}
 $global:CommonGlobalModuleBasePath = Join-Path -Path $env:CommonProgramFiles -ChildPath "Modules"
 
 function Install-Module {
@@ -70,18 +73,18 @@ Param(
 begin {
 
     if($PSVersionTable.PSVersion.Major -lt 2) {
-        Write-Error "PsGet requires PowerShell 2.0 or better; you have version $($Host.Version)"
+        _writeError "PsGet requires PowerShell 2.0 or better; you have version $($Host.Version)"
         return
     }
 
     if ($Force){
-        Write-Verbose "Force parameter is considered obsolete. Please use Update instead"
+        _writeVerbose "Force parameter is considered obsolete. Please use Update instead"
         $Update = $true
     }
 
 
     if ($Startup){
-        Write-Verbose "Startup parameter is considered obsolete. Please use AddToProfile instead"
+        _writeVerbose "Startup parameter is considered obsolete. Please use AddToProfile instead"
         $AddToProfile = $true
     }    
 
@@ -122,7 +125,7 @@ process {
                 return;
             }
             
-            Write-Verbose "Module $Module will be installed from central repository"		                                
+            _writeVerbose "Module $Module will be installed from central repository"		                                
             $moduleData = Get-PsGetModuleInfo $Module -DirectoryUrl:$DirectoryUrl | select -First 1             
             if (!$moduleData){
                 throw "Module $Module was not found in central repository"
@@ -138,7 +141,7 @@ process {
             break
         }
         Web {			
-            Write-Verbose "Module will be installed from $ModuleUrl"
+            _writeVerbose "Module will be installed from $ModuleUrl"
             
             $result = DownloadModuleFromWeb -DownloadURL:$ModuleUrl -ModuleName:$ModuleName -Type:$Type -Verb:GET
                                     
@@ -160,7 +163,7 @@ process {
             }
         }
         Local {
-            Write-Verbose "Module will be installed local path"
+            _writeVerbose "Module will be installed local path"
             $CandidateFileDir = $CandidateFilePath = Resolve-Path $ModulePath
 			
 			#if the CandidateFilePath is as file and not a directory, then we want to extract the directory
@@ -187,7 +190,7 @@ process {
             if ($ModuleName -eq ""){
                 $BestCandidateModule = Get-ModuleIdentityFile -Path $TempModuleFolderPath
                 $ModuleName = [IO.Path]::GetFileNameWithoutExtension($BestCandidateModule)
-                Write-Verbose "Guessed module name: $ModuleName"
+                _writeVerbose "Guessed module name: $ModuleName"
             }
             
             if ($ModuleName -eq ""){                
@@ -216,7 +219,7 @@ process {
             }
             catch
             {
-                Write-Error $_.Exception.Message
+                _writeError $_.Exception.Message
                 return
             }
         }
@@ -229,14 +232,14 @@ process {
     if (-not (Test-Path -Path $TempModuleFolderPath\* -Include "$ModuleName.psd1","$ModuleName.psm1")) {
         $ModulePath = Get-ModuleIdentityFile -Path $TempModuleFolderPath -ModuleName $ModuleName
         $TempModuleFolderPath = [System.IO.Path]::GetDirectoryName($ModulePath)
-        Write-Verbose "Normalized module path to: $TempModuleFolderPath"
+        _writeVerbose "Normalized module path to: $TempModuleFolderPath"
     }
 
 
     #Ensure that the hash of the module matches the specified hash
     if ($ModuleHash) {
         $TempModuleHash = Get-PsGetModuleHash -Path $TempModuleFolderPath
-        Write-Verbose "Hash of module in '$TempModuleFolderPath' is: $TempModuleHash"
+        _writeVerbose "Hash of module in '$TempModuleFolderPath' is: $TempModuleHash"
         if ($ModuleHash -ne $TempModuleHash) {
             throw "Module contents do not match specified module hash. Ensure the expected hash is correct and the module source is trusted."
         }
@@ -454,9 +457,9 @@ function DownloadNuGetPackage {
         $Source += "/"
     }
 
-    Write-Verbose "Querying '$Source' repository for package with Id '$NuGetPackageId'"
+    _writeVerbose "Querying '$Source' repository for package with Id '$NuGetPackageId'"
     $Url = "{1}Packages()?`$filter=tolower(Id)+eq+'{0}'&`$orderby=Id" -f $NuGetPackageId.ToLower(), $Source
-    Write-Debug "NuGet query url: $Url"
+    _writeDebug "NuGet query url: $Url"
 
     try
     {
@@ -479,13 +482,13 @@ function DownloadNuGetPackage {
 
     if ($Entry) {
         $PackageVersion = $Entry.properties.Version
-        Write-Verbose "Found NuGet package version '$PackageVersion'"
+        _writeVerbose "Found NuGet package version '$PackageVersion'"
     } else {
         throw ("Cannot find NuGet package '$NuGetPackageId $PackageVersion' [PreRelease='{0}', PreReleaseTag='{1}']" -f $PreRelease, $PreReleaseTag)
     }
 
     $DownloadUrl = $Entry.content.src
-    Write-Verbose "Downloading NuGet package from '$DownloadUrl'"
+    _writeVerbose "Downloading NuGet package from '$DownloadUrl'"
     $DownloadResult = DownloadModuleFromWeb -DownloadURL $DownloadUrl -ModuleName $NugetPackageId
     return $DownloadResult
 }
@@ -577,7 +580,7 @@ function Get-PsGetModuleInfo {
         }
 
         try {
-            Write-Verbose "Downloading modules repository from $DirectoryUrl"
+            _writeVerbose "Downloading modules repository from $DirectoryUrl"
             $repoRaw = $client.DownloadString($DirectoryUrl)            
             $StatusCode = 200
         } catch [System.Net.WebException] {            
@@ -596,9 +599,9 @@ function Get-PsGetModuleInfo {
             Export-Clixml -InputObject $DirectoryCache -Path $DirectoryCachePath
         } elseif (Test-Path -Path $CacheEntryFilePath) {
             if ($StatusCode -ne 304) {
-                Write-Warning "Could not retrieve modules repository from '$DirectoryUrl'. Status code: $StatusCode"
+                _writeWarning "Could not retrieve modules repository from '$DirectoryUrl'. Status code: $StatusCode"
             }
-            Write-Verbose "Using cached copy of modules repository"
+            _writeVerbose "Using cached copy of modules repository"
             $repoXml = [xml](Get-Content -Path $CacheEntryFilePath)
         } else {
             throw "Could not retrieve modules repository from '$DirectoryUrl'. Status code: $StatusCode"
@@ -609,7 +612,7 @@ function Get-PsGetModuleInfo {
     
         $feed = $repoXml.feed
         $title = $feed.title.innertext
-        Write-Verbose "Processing $title feed..."
+        _writeVerbose "Processing $title feed..."
     }
     
     process {
@@ -702,7 +705,7 @@ function CheckIfNeedInstallAndImportIfNot {
         $InstalledModule = $installedModule | Where {
             (Canonicolize-Path $_.ModuleBase) -like (Canonicolize-Path $Destination)
         } | Select-Object -First 1
-        Write-Verbose "Expecting the module '$ModuleName' to be installed in '$Destination'"
+        _writeVerbose "Expecting the module '$ModuleName' to be installed in '$Destination'"
     } else {
 
         #It is possible that a module could be installed in more than one location
@@ -710,7 +713,7 @@ function CheckIfNeedInstallAndImportIfNot {
         if($InstalledModule -and $InstalledModule.Count -gt 1) {
             $FirstInstalledModule = $InstalledModule | Select-Object -First 1
 
-            Write-Warning @"
+            _writeWarning @"
     The module '$ModuleName' was installed at more than one location.  Installed paths:
         $($InstalledModule.ModuleBase | fl | out-string)
 
@@ -735,11 +738,11 @@ function CheckIfNeedInstallAndImportIfNot {
         return $true
     }
 
-    Write-Verbose "**Hash $ModuleHash"
+    _writeVerbose "**Hash $ModuleHash"
 
     if ($ModuleHash -ne "") {
         $InstalledModuleHash = Get-PsGetModuleHash -Path $InstalledModule.ModuleBase
-        Write-Verbose "Hash of module in '$($InstalledModule.ModuleBase)' is: $InstalledModuleHash"
+        _writeVerbose "Hash of module in '$($InstalledModule.ModuleBase)' is: $InstalledModuleHash"
         if ($ModuleHash -ne $InstalledModuleHash) {
             # if the hash doesn't match, we install the module
             return $true
@@ -750,7 +753,7 @@ function CheckIfNeedInstallAndImportIfNot {
         ImportModuleGlobal -Name $ModuleName -ModuleBase $InstalledModule.ModuleBase
     }
 
-    Write-Verbose "$ModuleName already installed. Use -Update if you need update"
+    _writeVerbose "$ModuleName already installed. Use -Update if you need update"
     return $false
 }
 
@@ -766,14 +769,14 @@ function UnzipModule($inp, $dest){
       
     $inp = $PSGET_ZIPFolderPath;
 
-    Write-Verbose "Unzip $inp to $dest"
+    _writeVerbose "Unzip $inp to $dest"
     # From http://serverfault.com/questions/18872/how-to-zip-unzip-files-in-powershell/201604#201604
     $shellApp = New-Object -Com Shell.Application        
     $PSGET_ZIPFile = $shellApp.namespace([String]$inp)         
 
     $ContentTypesXmlPath = Join-Path -Path $PSGET_ZIPFile.Self.Path -ChildPath '[Content_Types].xml'
     if ($PSGET_ZIPFile.items() | Where-Object { $_.Path -eq $ContentTypesXmlPath }) {
-        Write-Verbose 'Zip file appears to be created by System.IO.Packaging (eg NuGet)'
+        _writeVerbose 'Zip file appears to be created by System.IO.Packaging (eg NuGet)'
     }
 
     $destination = $shellApp.namespace($dest)         
@@ -799,7 +802,7 @@ function DumbDownloadModuleFromWeb($DownloadURL, $ModuleName, $Type, $Verb) {
     $TempModuleFolderPath = join-path ([IO.Path]::GetTempPath()) ([Guid]::NewGuid().ToString() + "\$ModuleName")
     New-Item $TempModuleFolderPath -ItemType Directory | Out-Null
 
-    Write-Verbose "Dowloading module from $DownloadURL"
+    _writeVerbose "Dowloading module from $DownloadURL"
 
     # Client to download module stuff
     $client = (new-object Net.WebClient)
@@ -844,7 +847,7 @@ Param(
     function TryGuessFileName($client, $downloadUrl){    
         ## Try get module name from content disposition header (e.g. attachment; filename="Pscx-2.0.0.1.zip" )
         $contentDisposition = $client.ResponseHeaders["Content-Disposition"]
-        Write-Debug "TryGuessFileName: Content-Disposition = '$contentDisposition'"
+        _writeDebug "TryGuessFileName: Content-Disposition = '$contentDisposition'"
         $nameMatch = [regex]::match($contentDisposition, "filename=""(?'name'[^/]+\.(psm1|zip))""")
         if ($nameMatch.Groups["name"].Success) {
             return $nameMatch.Groups["name"].Value
@@ -897,7 +900,7 @@ Param(
     }    
     
     $CandidateFileName = TryGuessFileName $client $downloadUrl
-    Write-Debug "DownloadModuleFromWeb: CandidateFileName = '$CandidateFileName'"
+    _writeDebug "DownloadModuleFromWeb: CandidateFileName = '$CandidateFileName'"
     
     if ($Type -eq ""){
         $Type = TryGuessType $client $CandidateFileName -DownloadedFile $DownloadFilePath
@@ -918,7 +921,7 @@ Param(
         $BestCandidateModule = Get-ModuleIdentityFile -Path $TempModuleFolderPath
         $ModuleName = [IO.Path]::GetFileNameWithoutExtension($BestCandidateModule)
     }
-    Write-Debug "DownloadModuleFromWeb: ModuleName = '$ModuleName'"
+    _writeDebug "DownloadModuleFromWeb: ModuleName = '$ModuleName'"
         
     return @{
         ModuleFolderPath = $TempModuleFolderPath;    
@@ -943,7 +946,7 @@ Param(
     # TODO Handle situation when $_ is null (e.g. $Env:PSModulePath = ";Aaa;")
     $IsDestinationInPSModulePath = ($Env:PSModulePath -split ";" | foreach { Canonicolize-Path $_ })   -contains (Canonicolize-Path $Destination)
     if (-not $IsDestinationInPSModulePath) {
-        Write-Warning "Module install destination `"$Destination`" is not included in the PSModulePath environment variable."
+        _writeWarning "Module install destination `"$Destination`" is not included in the PSModulePath environment variable."
     }
 
     #Handle the edge case where there exists a file in the destination with the same name
@@ -961,7 +964,7 @@ Param(
         if($FailMkDir -and @($FailMkDir)[0].CategoryInfo.Category -eq "PermissionDenied") {
             throw "You do not have permission to install a module to '$Destination'. You may need to be elevated."
         }       
-        Write-Verbose "Create module folder at $ModuleFolderPath"
+        _writeVerbose "Create module folder at $ModuleFolderPath"
     }
     
     # Empty existing module folder before copying new files
@@ -974,7 +977,7 @@ Param(
     $Install = ($ModuleFolderPath + "\Install.ps1")
     if (Test-Path $Install){
         # TODO consider rechecking hash before running install.ps1
-        Write-Verbose "Install.ps1 file found in module. Let's execute it."
+        _writeVerbose "Install.ps1 file found in module. Let's execute it."
         & $Install
     }
     
@@ -988,7 +991,7 @@ Param(
             throw "For some unexpected reasons module was not installed."
         }
     }
-    Write-Host "Module $ModuleName was successfully installed." -Foreground Green
+    _writeHost "Module $ModuleName was successfully installed." -Foreground Green
     
     if ($DoNotImport -eq $false){
         # TODO consider rechecking hash before calling Import-Module
@@ -999,17 +1002,17 @@ Param(
         # WARNING $Profile is empty on Win2008R2 under Administrator
         $AllProfile = $PROFILE
         if(!(Test-Path $AllProfile)) {
-            Write-Verbose "Creating PowerShell profile...`n$AllProfile"
+            _writeVerbose "Creating PowerShell profile...`n$AllProfile"
             New-Item $AllProfile -Type File -Force -ErrorAction Stop
         }
         if (Select-String $AllProfile -Pattern "Import-Module $ModuleName"){
-            Write-Verbose "Import-Module $ModuleName command already in your profile"
+            _writeVerbose "Import-Module $ModuleName command already in your profile"
         } else {
             $Signature = Get-AuthenticodeSignature -FilePath $AllProfile
             if ($Signature.Status -eq 'Valid') {
-                Write-Error "PsGet cannot modify code-signed profile '$AllProfile'."
+                _writeError "PsGet cannot modify code-signed profile '$AllProfile'."
             } else {
-                Write-Verbose "Add Import-Module $ModuleName command to the profile"
+                _writeVerbose "Add Import-Module $ModuleName command to the profile"
                 "`nImport-Module $ModuleName" | Add-Content $AllProfile
             }
         }
@@ -1031,7 +1034,7 @@ function Get-FileHash {
 
     process {
         if (-not (Test-Path -Path $Path -PathType Leaf)) {
-            Write-Error "Cannot find file: $Path"
+            _writeError "Cannot find file: $Path"
             return
         }
         $Stream = [System.IO.File]::OpenRead($Path)
@@ -1074,7 +1077,7 @@ function Get-FolderHash {
             '{0} {1}' -f $_.Hash, $_.RelativePath
         }) -join "`r`n"
 
-    Write-Debug "TEXT>$Text<TEXT"
+    _writeDebug "TEXT>$Text<TEXT"
 
     $Algorithm = New-Object -TypeName System.Security.Cryptography.SHA256Managed
     $HashBytes = $Algorithm.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($Text))
@@ -1152,9 +1155,9 @@ function AddPathToPSModulePath {
         
         ReImportPSModulePathToSession
         
-        Write-Host """$PathToAdd"" is added to the PSModulePath environment variable"        
+        _writeHost """$PathToAdd"" is added to the PSModulePath environment variable"        
     } else {
-        Write-Verbose """$PathToAdd"" is already exists in PSModulePath environment variable"
+        _writeVerbose """$PathToAdd"" is already exists in PSModulePath environment variable"
     }
 <#
 .SYNOPSIS
@@ -1205,6 +1208,88 @@ function Canonicolize-Path {
 #>
 }
 
+
+
+# Logging wrappers to support running in PowerShell hosts that lack UI support
+function _writeHost
+{
+    [CmdletBinding()]
+    param
+    (
+        [string]$message,
+        $foregroundColor = $Host.UI.RawUI.ForegroundColor
+    )
+
+    if (_hostSupportsOutput)
+    {
+        Write-Host $message -ForegroundColor $foregroundColor
+    }
+}
+
+function _writeVerbose
+{
+    [CmdletBinding()]
+    param
+    (
+        [string]$message
+    )
+
+    if (_hostSupportsOutput)
+    {
+        Write-Verbose $message
+    }
+}
+
+function _writeWarning
+{
+    [CmdletBinding()]
+    param
+    (
+        [string]$message
+    )
+
+    if (_hostSupportsOutput)
+    {
+        Write-Warning $message
+    }
+}
+
+function _writeError
+{
+    [CmdletBinding()]
+    param
+    (
+        [string]$message
+    )
+
+    if (_hostSupportsOutput)
+    {
+        Write-Error $message
+    }
+}
+
+function _writeDebug
+{
+    [CmdletBinding()]
+    param
+    (
+        [string]$message
+    )
+
+    if (_hostSupportsOutput)
+    {
+        Write-Debug $message
+    }
+}
+
+function _hostSupportsOutput
+{
+    return ($Host.UI.RawUI.ForegroundColor -ne $null)
+}
+
+
+
+
 # Back Up TabExpansion if needed
 # Idea is stolen from posh-git + ps-get
 $teBackup = 'PsGet_DefaultTabExpansion'
@@ -1217,7 +1302,7 @@ if((Test-Path Function:\TabExpansion -ErrorAction SilentlyContinue) -and !(Test-
 # Idea is stolen from PowerTab
 $Module = $MyInvocation.MyCommand.ScriptBlock.Module 
 $Module.OnRemove = {
-    Write-Verbose "Revert tab expansion back"
+    _writeVerbose "Revert tab expansion back"
     Remove-Item Function:\TabExpansion -ErrorAction SilentlyContinue
     if (Test-Path Function:\$teBackup)
     {
